@@ -1,3 +1,5 @@
+import asyncio
+import queue
 import urllib
 
 from aiogram import Bot
@@ -7,10 +9,12 @@ from aiogram.utils import executor
 import os
 
 from bot.config import BOT_TOKEN
+from bot.wokrer import RecognizeThread, send_ready_images
 
 bot = Bot(token=BOT_TOKEN)
 
 dp = Dispatcher(bot)
+task_queue = queue.Queue()
 
 
 @dp.message_handler(commands=['start', 'help'])
@@ -29,10 +33,18 @@ async def handle_docs_photo(message):
     filename, file_extension = os.path.splitext(file_info.file_path)
     image_name = os.path.join('photos', document_id + file_extension)
     urllib.request.urlretrieve(f'https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}', image_name)
-
-    with open(image_name, 'rb') as image:
-        await bot.send_photo(chat_id=message.chat.id, photo=image)
+    task_queue.put((image_name, message.chat.id))
+    await message.answer("Ваше изображение обрабатывается, это займет примерно {} минут \n".format(recognize_thread.get_waiting_time()))
 
 
 if __name__ == '__main__':
-    executor.start_polling(dp)
+    recognize_thread = RecognizeThread(task_queue)
+    recognize_thread.daemon = True
+    recognize_thread.start()
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(send_ready_images(recognize_thread.ready_queue, bot))
+
+    executor.start_polling(dp, loop=loop)
+
+

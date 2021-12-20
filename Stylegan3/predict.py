@@ -99,31 +99,12 @@ def find_noise(G,
 
 
 def predict_by_noise(G,
-                     vgg16,
-                     target_pil,
-                     seed: int,
-                     num_steps: int
+                     noise,
+                     seed: int
                      ):
     np.random.seed(seed)
     torch.manual_seed(seed)
-    # Load networks.
-    device = torch.device('cuda')
-    # Load target image.
-    w, h = target_pil.size
-    s = min(w, h)
-    target_pil = target_pil.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
-    target_pil = target_pil.resize((G.img_resolution, G.img_resolution), PIL.Image.LANCZOS)
-    target_uint8 = np.array(target_pil, dtype=np.uint8)
-
-    # Optimize projection.
-    start_time = perf_counter()
-    projected_w_steps = find_noise(
-        G,
-        vgg16,
-        target=torch.tensor(target_uint8.transpose([2, 0, 1]), device=device),  # pylint: disable=not-callable
-        num_steps=num_steps,
-        device=device
-    )
+    projected_w_steps = noise
     projected_w = projected_w_steps[-1]
     synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
     synth_image = (synth_image + 1) * (255 / 2)

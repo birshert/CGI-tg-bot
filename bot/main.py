@@ -7,9 +7,13 @@ from aiogram import types
 from aiogram.dispatcher import Dispatcher
 from aiogram.utils import executor
 import os
+import sys
 
-from bot.config import BOT_TOKEN
-from bot.wokrer import RecognizeThread, send_ready_images
+sys.path.append('../')
+sys.path.append('Stylegan3')
+
+from config import BOT_TOKEN
+from wokrer import RecognizeThread, send_ready_images
 
 bot = Bot(token=BOT_TOKEN)
 

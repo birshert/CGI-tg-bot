@@ -6,6 +6,7 @@ import numpy as np
 import PIL.Image
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 
 def find_noise(G,
@@ -45,7 +46,7 @@ def find_noise(G,
         buf[:] = torch.randn_like(buf)
         buf.requires_grad = True
 
-    for step in range(num_steps):
+    for step in tqdm(range(num_steps)):
         # Learning rate schedule.
         t = step / num_steps
         w_noise_scale = w_std * initial_noise_factor * max(0.0, 1.0 - t / noise_ramp_length) ** 2
@@ -121,6 +122,7 @@ def predict_by_noise(G1,
         device=device,
     )
     projected_w = projected_w_steps[-1]
+
     synth_image = G2.synthesis(projected_w.unsqueeze(0), noise_mode='const')
     synth_image = (synth_image + 1) * (255 / 2)
     synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()

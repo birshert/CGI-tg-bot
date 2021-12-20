@@ -14,6 +14,7 @@ import legacy
 import predict
 from metrics.metric_utils import get_feature_detector
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -33,30 +34,33 @@ async def send_ready_images(ready_queue, bot):
 
 
 class RecognizeThread(Thread):
+
     def __init__(self, task_queue):
         Thread.__init__(self)
         self.task_queue = task_queue
         self.ready_queue = queue.Queue()
-        self.batch_size = 4
-        self.model = MTCNN(image_size=1024, select_largest=True, device=device)
-        url1 = "../Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl"
-        url2 = "../Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
-        url3 = "../Stylegan3/models/vgg16.pkl"
+        self.batch_size = 1
+        self.model = MTCNN(select_largest=True, device=device)
+        url1 = "Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl"
+        url2 = "Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
+        url3 = "Stylegan3/models/vgg16.pkl"
+        print('LOADING MODELS')
         with dnnlib.util.open_url(url1) as fp:
             self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
         with dnnlib.util.open_url(url2) as fp:
             self.G2 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
         with dnnlib.util.open_url(url3) as fp:
-            self.vgg16 = get_feature_detector(fp).eval().to(device)
+            self.vgg16 = get_feature_detector(url3).eval().to(device)
+        print('MODELS LOADED')
 
     def predict(self, images):
         res = []
         for image in images:
-            image = Image.fromarray(image)
-            image = (self.model(image) + 1) / 2 * 255
-            print(image.max())
-            image = image.permute(1, 2, 0).int().numpy()
-            res.append(predict.predict_by_noise(self.G1, self.G2, self.vgg16, Image.fromarray(image), 228, 100))
+            #             image = (self.model(image) + 1) / 2 * 255
+            #             print(image.max())
+            #             image = image.permute(1, 2, 0).numpy().astype(np.uint8)
+
+            res.append(predict.predict_by_noise(self.G1, self.G2, self.vgg16, image, 0, 500))
 
         return res
 
@@ -116,14 +120,11 @@ class RecognizeThread(Thread):
                 else:
                     image_paths.append(image_path)
                     chats.append(chat_id)
-                    image = cv2.imread(image_path)
-                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    image = Image.open(image_path).convert('RGB')
                     images.append(image)
                     cnt += 1
 
             pred = self.predict(images)
             for i, image in enumerate(pred):
-                print(image.shape)
-                print(image.min(), image.max())
-                cv2.imwrite(image_paths[i], cv2.cvtColor(image.astype(np.float32), cv2.COLOR_RGB2BGR))
+                image.save(image_paths[i])
                 self.ready_queue.put((image_paths[i], chats[i]))

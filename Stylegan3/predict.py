@@ -98,15 +98,31 @@ def find_noise(G,
     return w_out.repeat([1, G.mapping.num_ws, 1])
 
 
-def predict_by_noise(G,
-                     noise,
-                     seed: int
+def predict_by_noise(G1,
+                     G2,
+                     vgg16,
+                     target_fname,
+                     seed: int,
+                     num_steps: int
                      ):
     np.random.seed(seed)
     torch.manual_seed(seed)
-    projected_w_steps = noise
+    device = torch.device('cuda')
+    target_pil = PIL.Image.open(target_fname).convert('RGB')
+    w, h = target_pil.size
+    s = min(w, h)
+    target_pil = target_pil.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
+    target_pil = target_pil.resize((G1.img_resolution, G1.img_resolution), PIL.Image.LANCZOS)
+    target_uint8 = np.array(target_pil, dtype=np.uint8)
+    projected_w_steps = find_noise(
+        G1,
+        vgg16,
+        target=torch.tensor(target_uint8.transpose([2, 0, 1]), device=device),  # pylint: disable=not-callable
+        num_steps=num_steps,
+        device=device,
+    )
     projected_w = projected_w_steps[-1]
-    synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
+    synth_image = G2.synthesis(projected_w.unsqueeze(0), noise_mode='const')
     synth_image = (synth_image + 1) * (255 / 2)
     synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
     return PIL.Image.fromarray(synth_image, 'RGB')

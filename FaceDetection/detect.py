@@ -19,3 +19,4 @@ def detect_video(model, video):
             faces.append([False, None])
         else:
             faces.append([True, boxes])
+    return faces

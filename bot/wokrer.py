@@ -39,15 +39,15 @@ class RecognizeThread(Thread):
         self.ready_queue = queue.Queue()
         self.batch_size = 4
         self.model = MTCNN(image_size=1024, select_largest=True, device=device)
-        url1 = "https://github.com/birshert/CGI-tg-bot/releases/download/model/stylegan3-r-ffhq-1024x1024.pkl"
-        url2 = "https://github.com/birshert/CGI-tg-bot/releases/download/cartoon-model/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
-        url3 = "https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/metrics/vgg16.pkl"
+        url1 = "../Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl"
+        url2 = "../Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
+        url3 = "../Stylegan3/models/vgg16.pkl"
         with dnnlib.util.open_url(url1) as fp:
             self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
         with dnnlib.util.open_url(url2) as fp:
             self.G2 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
         with dnnlib.util.open_url(url3) as fp:
-            self.vgg16 = get_feature_detector(url3).eval().to(device)
+            self.vgg16 = get_feature_detector(fp).eval().to(device)
 
     def predict(self, images):
         res = []

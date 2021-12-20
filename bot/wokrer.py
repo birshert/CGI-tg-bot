@@ -5,6 +5,15 @@ import asyncio
 
 import cv2
 import numpy as np
+from PIL import Image
+from facenet_pytorch import MTCNN
+import torch
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def is_it_video(path):
+    return '.MOV' in path or '.mp4' in path or '.avi' in path
 
 
 async def send_ready_images(ready_queue, bot):
@@ -23,24 +32,85 @@ class RecognizeThread(Thread):
         Thread.__init__(self)
         self.task_queue = task_queue
         self.ready_queue = queue.Queue()
-        self.model = None
+        self.batch_size = 4
+        self.model = MTCNN(image_size=1024, select_largest=True, device=device)
 
-    def predict(self, image):
-        if self.model is None:
-            time.sleep(10)
-            return np.random.random(image.shape) * 255
-        else:
-            return self.model(image)
+    def predict(self, images):
+        res = []
+        for image in images:
+            image = Image.fromarray(image)
+            image = (self.model(image) + 1) / 2 * 255
+            print(image.max())
+            image = image.permute(1, 2, 0).int().numpy()
+            res.append(image)
+
+        return res
 
     def get_waiting_time(self):
         return round(self.task_queue.qsize() * 10 / 60, 2)
 
+    def predict_batch(self, batch, res):
+        pred = self.predict(np.array(batch))
+        res = np.stack([pred, res]) if res.size() else pred
+
+    def predict_video(self, video_path, chat_id):
+        cap = cv2.VideoCapture(video_path)
+
+        save_path = 'res_' + video_path[:video_path.rfind('.')] + '.mp4'
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+        out = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
+
+        batch = []
+        res = np.array([])
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                break
+
+            batch.append(image)
+            if len(batch) == self.batch_size:
+                self.predict_batch(batch, res)
+                batch = []
+
+            k = cv2.waitKey(25)
+            if k == 27:
+                break
+        if len(batch):
+            self.predict_batch(batch, res)
+
+        for image in res:
+            out.write(image)
+
+        out.release()
+        cap.release()
+
     def run(self) -> None:
         while True:
-            image_path, chat_id = self.task_queue.get()
-            image = cv2.imread(image_path)
-            image = self.predict(image)
+            cnt = 0
+            chats = []
+            image_paths = []
+            images = []
+            while cnt < self.batch_size and self.task_queue.qsize():
+                image_path, chat_id = self.task_queue.get()
+                if is_it_video(image_path):
+                    # self.predict_video(image_path, chat_id)
+                    continue
+                else:
+                    image_paths.append(image_path)
+                    chats.append(chat_id)
+                    image = cv2.imread(image_path)
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    images.append(image)
+                    cnt += 1
 
-            cv2.imwrite(image_path, image)
-            self.ready_queue.put((image_path, chat_id))
+            pred = self.predict(images)
+            for i, image in enumerate(pred):
+                print(image.shape)
+                print(image.min(), image.max())
+                cv2.imwrite(image_paths[i], cv2.cvtColor(image.astype(np.float32), cv2.COLOR_RGB2BGR))
+                self.ready_queue.put((image_paths[i], chats[i]))
 

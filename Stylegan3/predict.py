@@ -101,14 +101,13 @@ def find_noise(G,
 def predict_by_noise(G1,
                      G2,
                      vgg16,
-                     target_fname,
+                     target_pil,
                      seed: int,
                      num_steps: int
                      ):
     np.random.seed(seed)
     torch.manual_seed(seed)
     device = torch.device('cuda')
-    target_pil = PIL.Image.open(target_fname).convert('RGB')
     w, h = target_pil.size
     s = min(w, h)
     target_pil = target_pil.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))

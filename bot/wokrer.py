@@ -9,6 +9,11 @@ from PIL import Image
 from facenet_pytorch import MTCNN
 import torch
 
+import dnnlib
+import legacy
+import predict
+from metrics.metric_utils import get_feature_detector
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -34,6 +39,15 @@ class RecognizeThread(Thread):
         self.ready_queue = queue.Queue()
         self.batch_size = 4
         self.model = MTCNN(image_size=1024, select_largest=True, device=device)
+        url1 = "https://github.com/birshert/CGI-tg-bot/releases/download/model/stylegan3-r-ffhq-1024x1024.pkl"
+        url2 = "https://github.com/birshert/CGI-tg-bot/releases/download/cartoon-model/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
+        url3 = "https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/metrics/vgg16.pkl"
+        with dnnlib.util.open_url(url1) as fp:
+            self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
+        with dnnlib.util.open_url(url2) as fp:
+            self.G2 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
+        with dnnlib.util.open_url(url3) as fp:
+            self.vgg16 = get_feature_detector(url3).eval().to(device)
 
     def predict(self, images):
         res = []
@@ -42,7 +56,7 @@ class RecognizeThread(Thread):
             image = (self.model(image) + 1) / 2 * 255
             print(image.max())
             image = image.permute(1, 2, 0).int().numpy()
-            res.append(image)
+            res.append(predict.predict_by_noise(self.G1, self.G2, self.vgg16, Image.fromarray(image), 228, 100))
 
         return res
 
@@ -113,4 +127,3 @@ class RecognizeThread(Thread):
                 print(image.min(), image.max())
                 cv2.imwrite(image_paths[i], cv2.cvtColor(image.astype(np.float32), cv2.COLOR_RGB2BGR))
                 self.ready_queue.put((image_paths[i], chats[i]))
-

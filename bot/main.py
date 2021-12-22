@@ -53,7 +53,7 @@ async def inline_yes1_answer_callback_handler(query: types.CallbackQuery):
     await bot.send_message(query.from_user.id, text)
 
 
-@dp.callback_query_handler(lambda x: x.data.startswith('no1_5'), state='*')
+@dp.callback_query_handler(lambda x: x.data.startswith('no1_' + str(low_steps)), state='*')
 async def inline_no1_answer_callback_handler(query: types.CallbackQuery):
     await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id, None)
     img_path = query.data[7:]
@@ -67,7 +67,7 @@ async def inline_no1_answer_callback_handler(query: types.CallbackQuery):
     await query.message.answer(text, reply_markup=markup)
 
 
-@dp.callback_query_handler(lambda x: x.data.startswith('no1_1'), state='*')
+@dp.callback_query_handler(lambda x: x.data.startswith('no1_' + str(high_steps)), state='*')
 async def inline_no1_high_answer_callback_handler(query: types.CallbackQuery):
     img_path = query.data[8:]
     text = 'Жаль, что вам не понравилось. Мы сделали все возможное! Попробуйте прислать другое фото'

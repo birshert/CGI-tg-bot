@@ -39,11 +39,19 @@ def blend(path1, path2, cnt):
     state_dict1 = G1.synthesis.state_dict()
     state_dict2 = G2.synthesis.state_dict()
 
-    for elem in state_dict2:
-        if '_' in elem and int(elem.split('_')[0][1:]) >= cnt:
-            state_dict1[elem] = state_dict2[elem]
+    blend = [0, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.5, 0.7, 0.8, .8, .8, .8, 1]
+
+    for key in state_dict2:
+        if key[:1] != 'L':
+            continue
+        l = blend[int(key.split('_')[0][1:])]
+        if 'affine' in key:
+            l = 0
+
+        state_dict1[key] = state_dict1[key] * l + state_dict2[key] * (1 - l)
 
     G1.synthesis.load_state_dict(state_dict1)
+
     return G1
 
 

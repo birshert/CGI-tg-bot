@@ -69,7 +69,7 @@ async def send_ready_images(ready_queue, bot):
                     reply_markup=markup
                 )
         else:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
 
 
 class RecognizeThread(Thread):
@@ -88,7 +88,7 @@ class RecognizeThread(Thread):
 
         self.G2 = blend(
             'Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl',
-            'Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl'
+            'Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl'
         ).requires_grad_(False).to(device).eval()
 
         self.vgg16 = get_feature_detector('Stylegan3/models/vgg16.pkl').eval().to(device).eval()
@@ -131,5 +131,7 @@ class RecognizeThread(Thread):
 
     def run(self) -> None:
         while True:
+            await asyncio.sleep(1)
+
             image_path, chat_id, steps, crop = self.task_queue.get()
             self.process_task(Task(chat_id=chat_id, image_path=image_path, steps=steps, cnt_faces=0, crop=crop))

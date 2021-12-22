@@ -61,7 +61,7 @@ async def inline_no1_answer_callback_handler(query: types.CallbackQuery):
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
-        InlineKeyboardButton('Да', callback_data='high' + img_path),
+        InlineKeyboardButton('Да', callback_data='high_' + img_path),
         InlineKeyboardButton('Нет', callback_data='no2_' + img_path)
     )
     await query.message.answer(text, reply_markup=markup)
@@ -84,7 +84,7 @@ async def inline_no2_answer_callback_handler(query: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda x: x.data.startswith('low'), state='*')
-async def inline_go_disney_answer_callback_handler(query: types.CallbackQuery):
+async def inline_go_disney_answer_callback_handler1(query: types.CallbackQuery):
     img_name = query.data[4:]
 
     with open(img_name, 'rb') as f:
@@ -100,7 +100,7 @@ async def inline_go_disney_answer_callback_handler(query: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda x: x.data.startswith('high'), state='*')
-async def inline_go_disney_answer_callback_handler(query: types.CallbackQuery):
+async def inline_go_disney_answer_callback_handler2(query: types.CallbackQuery):
     img_name = query.data[5:]
 
     with open(img_name, 'rb') as f:

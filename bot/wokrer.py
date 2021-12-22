@@ -18,6 +18,7 @@ sys.path.append('face-alignment')
 from face_aligner import align_image
 from face_aligner import get_detector
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -70,14 +71,9 @@ class RecognizeThread(Thread):
             yield face
 
     def predict(self, image_paths):
-        res = []
         for image_path in image_paths:
-            tmp_res = []
             for face in self.align_face_on_image(image_path):
-                tmp_res.append(predict.predict_by_noise(self.G1, self.G2, self.vgg16, face, 0, 10))
-            res.append(tmp_res)
-
-        return res
+                yield image_path, predict.predict_by_noise(self.G1, self.G2, self.vgg16, face, 0, 10)
 
     def get_waiting_time(self):
         return round(self.task_queue.qsize() * 10 / 60, 2)
@@ -124,6 +120,8 @@ class RecognizeThread(Thread):
         return save_path
 
     def run(self) -> None:
+        image_path_counter = {}
+
         while True:
             cnt = 0
 
@@ -143,10 +141,12 @@ class RecognizeThread(Thread):
 
                     cnt += 1
 
-            pred = self.predict(image_paths)
+            for i, (image_path, image) in enumerate(self.predict(image_paths)):
+                if image_path in image_path_counter:
+                    image_path_counter[image_path] += 1
+                else:
+                    image_path_counter[image_path] = 0
 
-            for i, images in enumerate(pred):
-                for j, image in enumerate(images):
-                    image_path = '.'.join(image_paths[i].split('.')[:-1]) + f'{j:03d}.' + image_paths[i].split('.')[-1]
-                    image.save(image_path)
-                    self.ready_queue.put((image_path, chats[i]))
+                image_path = image_path[:image_path.rfind('.')] + f'{image_path_counter[image_path]:03d}.' + '.png'
+                image.save(image_path)
+                self.ready_queue.put((image_path, chats[i]))

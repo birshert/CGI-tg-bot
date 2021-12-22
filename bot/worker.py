@@ -1,24 +1,25 @@
-import asyncio
-import queue
 import sys
 
 
 sys.path.append('face-alignment')
 sys.path.append('Stylegan3')
+import asyncio
+import queue
+from dataclasses import dataclass
 from threading import Thread
+
+import torch
+from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
+from face_aligner import align_image
+from face_aligner import get_detector
+from PIL import Image
 
 import dnnlib
 import legacy
 import predict
-import torch
-from dataclasses import dataclass
-from metrics.metric_utils import get_feature_detector
-from PIL import Image
 from blend_models import blend
-
-from face_aligner import align_image
-from face_aligner import get_detector
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from metrics.metric_utils import get_feature_detector
 
 
 @dataclass
@@ -51,13 +52,14 @@ async def send_ready_images(ready_queue, bot):
             if task.crop:
                 markup.row_width = 1
                 markup.add(
-                    InlineKeyboardButton('Обработать', callback_data='yes0_' + path),
+                    InlineKeyboardButton('Обработать качественно', callback_data='low_' + path),
+                    InlineKeyboardButton('Обработать очень качественно', callback_data='high_' + path),
                 )
             else:
                 markup.row_width = 2
                 markup.add(
                     InlineKeyboardButton('\U0001F44D', callback_data='yes1_' + task.image_path),
-                    InlineKeyboardButton('\U0001F44E', callback_data='no1_' + task.image_path)
+                    InlineKeyboardButton('\U0001F44E', callback_data=f'no1_{task.steps}' + task.image_path)
                 )
 
             with open(path, 'rb') as f:
@@ -117,7 +119,7 @@ class RecognizeThread(Thread):
         image.save(save_path)
 
         self.ready_queue.put((save_path, task))
-        
+
     def process_task(self, task: Task):
         if task.crop:
             self.crop_faces(task)

@@ -11,7 +11,7 @@ import predict
 import torch
 from metrics.metric_utils import get_feature_detector
 from PIL import Image
-
+from blend_models import blend
 
 sys.path.append('face-alignment')
 
@@ -50,19 +50,19 @@ class RecognizeThread(Thread):
         self.ready_queue = queue.Queue()
         self.batch_size = 4
 
-        self.landmarks_detector = get_detector()
-
-        url1 = "Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl"
-        url2 = "Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl"
-        url3 = "Stylegan3/models/vgg16.pkl"
-
         print('LOADING MODELS')
 
-        with dnnlib.util.open_url(url1) as fp:
-            self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
-        with dnnlib.util.open_url(url2) as fp:
-            self.G2 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
-        self.vgg16 = get_feature_detector(url3).eval().to(device)
+        self.landmarks_detector = get_detector()
+
+        with dnnlib.util.open_url('Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl') as fp:
+            self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device).eval()
+
+        self.G2 = blend(
+            'models/stylegan3-r-ffhq-1024x1024.pkl',
+            'models/stylegan3-r-ffhq-1024x1024.pkl'
+        ).requires_grad_(False).to(device).eval()
+
+        self.vgg16 = get_feature_detector('Stylegan3/models/vgg16.pkl').eval().to(device).eval()
 
         print('MODELS LOADED')
 

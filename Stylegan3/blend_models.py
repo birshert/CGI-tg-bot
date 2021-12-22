@@ -1,13 +1,10 @@
-import click
-import torch
-
 import dnnlib
 import legacy
 from torch_utils import misc
 from train import init_dataset_kwargs
 
 
-def blend(path1, path2, cnt):
+def blend(path1, path2):
     training_set_kwargs, _ = init_dataset_kwargs(data='cartoon')
     training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs)  # subclass of training.dataset.Dataset
 
@@ -53,23 +50,3 @@ def blend(path1, path2, cnt):
     G1.synthesis.load_state_dict(state_dict1)
 
     return G1
-
-
-@click.command()
-@click.option('--path1', help='Path to model faces', metavar='DIR', required=True)
-@click.option('--path2', help='Path to model cartoon', metavar='DIR', required=True)
-@click.option('--cnt', help='Num layers', metavar='DIR', required=True, type=int)
-@click.option('--path3', help='Output path', metavar='DIR', required=True)
-def main(**kwargs):
-    path1 = kwargs.get('path1', 'tmp')
-    path2 = kwargs.get('path2', 'tmp')
-    cnt = kwargs.get('cnt', 5)
-    output_path = kwargs.get('path3', 'tmp')
-
-    blended_model = blend(path1, path2, cnt)
-
-    torch.save(blended_model.state_dict(), output_path)
-
-
-if __name__ == '__main__':
-    main()  # pylint: disable=no-value-for-parameter

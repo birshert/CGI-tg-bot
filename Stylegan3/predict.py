@@ -1,6 +1,4 @@
 import copy
-import os
-from time import perf_counter
 
 import numpy as np
 import PIL.Image
@@ -127,7 +125,3 @@ def predict_by_noise(G1,
     synth_image = (synth_image + 1) * (255 / 2)
     synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
     return PIL.Image.fromarray(synth_image, 'RGB')
-
-
-if __name__ == "__main__":
-    predict_by_noise()

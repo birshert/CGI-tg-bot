@@ -7,19 +7,22 @@ from aiogram import Bot
 from aiogram import types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import Dispatcher
+from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils import executor
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.helper import Helper, HelperMode, ListItem
-from bot.config import BOT_TOKEN
+from aiogram.utils.helper import Helper
+from aiogram.utils.helper import HelperMode
+from aiogram.utils.helper import ListItem
 
-from bot.wokrer import RecognizeThread, send_ready_images
+from config import BOT_TOKEN
+from wokrer import RecognizeThread
+from wokrer import send_ready_images
+
 
 bot = Bot(token=BOT_TOKEN)
 
 dp = Dispatcher(bot, storage=MemoryStorage())
 task_queue = queue.Queue()
-like = "\U0001F44D"
-dislike = "\U0001F44E"
 
 
 class States(Helper):
@@ -49,19 +52,18 @@ async def handle_docs_photo(message):
     filename, file_extension = os.path.splitext(file_info.file_path)
     image_name = os.path.join('photos', file_id + file_extension)
     urllib.request.urlretrieve(f'https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}', image_name)
-    task_queue.put((image_name, message.chat.id))
     if await state.get_state() == States.STATE_0[0]:
-        num_steps = 100
+        num_steps = 300
     elif await state.get_state() == States.STATE_1[0]:
         num_steps = 500
     elif await state.get_state() == States.STATE_2[0]:
         num_steps = 1000
     else:
         await state.set_state(States.all()[0])
-        num_steps = 100
-    task_queue.put((image_name, message.chat.id, num_steps))
+        num_steps = 300
+    task_queue.put((image_name, message.chat.id, num_steps, True))
     await message.answer(
-        "Ваше изображение обрабатывается, это займет примерно {} минут \n".format(recognize_thread.get_waiting_time()))
+        "Ищем лица на вашем фото")
 
 
 @dp.callback_query_handler(lambda x: x.data.startswith('yes1'), state='*')
@@ -89,9 +91,10 @@ async def inline_no1_answer_callback_handler(query: types.CallbackQuery):
         text = "Хотите ли вы, чтобы мы обработали последнюю фотографию чуть дольше, тем самым улучшив результат?"
         markup = InlineKeyboardMarkup()
         markup.row_width = 2
-        markup.add(InlineKeyboardButton(like, callback_data="yes2_" + img_path),
-                   InlineKeyboardButton(dislike, callback_data="no2_" + img_path))
-        await bot.send_message(query.from_user.id, text, reply_markup=markup)
+        markup.add(InlineKeyboardButton("Да", callback_data="yes2_" + img_path),
+                   InlineKeyboardButton("Нет", callback_data="no2_" + img_path))
+
+        await query.message.answer(text, reply_markup=markup)
 
 
 @dp.callback_query_handler(lambda x: x.data.startswith('yes2'), state='*')
@@ -103,17 +106,16 @@ async def inline_yes2_answer_callback_handler(query: types.CallbackQuery):
     elif await state.get_state() == States.STATE_1[0]:
         await state.set_state(States.all()[2])
     img_name = query.data[5:]
-    num_steps = 100
+    num_steps = 300
     if await state.get_state() == States.STATE_0[0]:
-        num_steps = 100
+        num_steps = 300
     if await state.get_state() == States.STATE_1[0]:
         num_steps = 500
     if await state.get_state() == States.STATE_2[0]:
         num_steps = 1000
-    task_queue.put((img_name, query.message.chat.id, num_steps))
-    await bot.send_message(query.from_user.id,
-                           "Ваше изображение обрабатывается, это займет примерно {} минут \n".format(
-                               recognize_thread.get_waiting_time()))
+    task_queue.put((img_name, query.message.chat.id, num_steps, False))
+    await query.message.answer("Ваше изображение обрабатывается, это займет примерно {} минут \n".format(
+        recognize_thread.get_waiting_time()))
 
 
 @dp.callback_query_handler(lambda x: x.data.startswith('no2'), state='*')
@@ -124,6 +126,15 @@ async def inline_yes2_answer_callback_handler(query: types.CallbackQuery):
     os.remove(img_name)
     await state.set_state(States.all()[0])
     await bot.send_message(query.from_user.id, "Хорошо. Присылайте фотографии еще!")
+
+
+@dp.callback_query_handler(lambda x: x.data.startswith('yes0'), state='*')
+async def inline_go_disney_answer_callback_handler(query: types.CallbackQuery):
+    await bot.edit_message_reply_markup(query.message.chat.id, query.message.message_id, None)
+    img_name = query.data[5:]
+    task_queue.put((img_name, query.message.chat.id, 100, False))
+    await query.message.answer("Ваше изображение обрабатывается, это займет примерно {} минут \n".format(
+        recognize_thread.get_waiting_time()))
 
 
 if __name__ == '__main__':

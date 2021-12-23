@@ -1,7 +1,6 @@
 import copy
-import os
-from time import perf_counter
 
+import imageio
 import numpy as np
 import PIL.Image
 import torch
@@ -11,6 +10,8 @@ from tqdm import tqdm
 
 def find_noise(G,
                vgg16,
+               is_pred,
+               w,
                target: torch.Tensor,  # [C,H,W] and dynamic range [0,255], W & H must match G output resolution
                *,
                num_steps=1000,
@@ -36,8 +37,8 @@ def find_noise(G,
     if target_images.shape[2] > 256:
         target_images = F.interpolate(target_images, size=(256, 256), mode='area')
     target_features = vgg16(target_images, resize_images=False, return_lpips=True)
-
-    w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True)  # pylint: disable=not-callable
+    w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device,
+                             requires_grad=True)  # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
     optimizer = torch.optim.Adam([w_opt] + list(noise_bufs.values()), betas=(0.9, 0.999), lr=initial_learning_rate)
 
@@ -101,6 +102,8 @@ def find_noise(G,
 
 def predict_by_noise(G1,
                      G2,
+                     is_pred,
+                     ww,
                      vgg16,
                      target_pil,
                      seed: int,
@@ -117,17 +120,16 @@ def predict_by_noise(G1,
     projected_w_steps = find_noise(
         G1,
         vgg16,
+        is_pred,
+        ww,
         target=torch.tensor(target_uint8.transpose([2, 0, 1]), device=device),  # pylint: disable=not-callable
         num_steps=num_steps,
         device=device,
     )
+
     projected_w = projected_w_steps[-1]
 
     synth_image = G2.synthesis(projected_w.unsqueeze(0), noise_mode='const')
     synth_image = (synth_image + 1) * (255 / 2)
     synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
-    return PIL.Image.fromarray(synth_image, 'RGB')
-
-
-if __name__ == "__main__":
-    predict_by_noise()
+    return PIL.Image.fromarray(synth_image, 'RGB'), projected_w.unsqueeze(0).cpu().numpy()

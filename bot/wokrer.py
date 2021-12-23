@@ -1,43 +1,79 @@
-import asyncio
-import queue
+import os
 import sys
-from threading import Thread
-
-import cv2
-import dnnlib
-import legacy
-import numpy as np
-import predict
-import torch
-from metrics.metric_utils import get_feature_detector
-from PIL import Image
-from blend_models import blend
 
 sys.path.append('face-alignment')
+sys.path.append('Stylegan3')
+import asyncio
+import queue
+from dataclasses import dataclass
+from threading import Thread
 
+import torch
+from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup
 from face_aligner import align_image
 from face_aligner import get_detector
+from PIL import Image
+
+import numpy as np
+import dnnlib
+import legacy
+import predict
+from blend_models import blend
+from metrics.metric_utils import get_feature_detector
+
+start_steps = 300
+step_of_steps = 200
+end_steps = 1500
+iter_crop = 70
+
+
+@dataclass
+class Task:
+    chat_id: str
+    image_path: str
+    steps: int
+    cnt_faces: int
+    crop: bool
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def is_it_video(path):
-    return '.MOV' in path or '.mp4' in path or '.avi' in path
-
-
 async def send_ready_images(ready_queue, bot):
     while True:
         if ready_queue.qsize():
-            path, chat_id = ready_queue.get()
-            if is_it_video(path):
-                print('sending video to {}'.format(chat_id))
-                with open(path, 'rb') as f:
-                    await bot.send_video(chat_id=chat_id, video=f)
-            else:
-                print('sending photo to {}'.format(chat_id))
-                with open(path, 'rb') as f:
-                    await bot.send_photo(chat_id=chat_id, photo=f)
+            path, task = ready_queue.get()
+            if path is None:
+                await bot.send_message(
+                    chat_id=task.chat_id,
+                    text='Не нашли ни одного лица, попробуйте другую фотографию'
+                )
+                continue
+
+            print('sending photo to {}'.format(task.chat_id))
+
+            markup = InlineKeyboardMarkup()
+
+            if task.crop:
+                markup.row_width = 1
+                markup.add(
+                    InlineKeyboardButton('Обработать', callback_data='do|' + str(task.steps) + '|' + path),
+                )
+            elif task.steps + step_of_steps <= end_steps:
+                markup.row_width = 1
+                markup.add(
+                    InlineKeyboardButton('Пойдет', callback_data='yes|' + task.image_path),
+                    InlineKeyboardButton('Доработать',
+                                         callback_data='do|' + str(task.steps + step_of_steps) + '|' + task.image_path),
+                )
+
+            with open(path, 'rb') as f:
+                await bot.send_photo(
+                    chat_id=task.chat_id,
+                    photo=f,
+                    reply_markup=markup
+                )
         else:
             await asyncio.sleep(0.1)
 
@@ -48,7 +84,7 @@ class RecognizeThread(Thread):
         Thread.__init__(self)
         self.task_queue = task_queue
         self.ready_queue = queue.Queue()
-        self.batch_size = 4
+        self.iter = 0
 
         print('LOADING MODELS')
 
@@ -58,95 +94,72 @@ class RecognizeThread(Thread):
             self.G1 = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device).eval()
 
         self.G2 = blend(
-            'models/stylegan3-r-ffhq-1024x1024.pkl',
-            'models/stylegan3-r-ffhq-1024x1024.pkl'
+            'Stylegan3/models/stylegan3-r-ffhq-1024x1024.pkl',
+            'Stylegan3/models/stylegan3-r-ffhq-1024x1024-cartoon.pkl'
         ).requires_grad_(False).to(device).eval()
 
         self.vgg16 = get_feature_detector('Stylegan3/models/vgg16.pkl').eval().to(device).eval()
 
         print('MODELS LOADED')
 
-    def align_face_on_image(self, image_path):
-        for face in align_image(self.landmarks_detector, image_path):
-            yield face
+    def align_face_on_image(self, image_path: str):
+        return list(align_image(self.landmarks_detector, image_path))
 
-    def predict(self, image_paths):
-        for image_path in image_paths:
-            for face in self.align_face_on_image(image_path):
-                yield image_path, predict.predict_by_noise(self.G1, self.G2, self.vgg16, face, 0, 10)
+    def crop_faces(self, task: Task):
+        image_path = task.image_path
+        faces = self.align_face_on_image(image_path)
+        if faces:
+            for face in faces:
+                save_path = image_path[:image_path.rfind('.')] + f'{task.cnt_faces:03d}' + '.png'
+                task.cnt_faces += 1
+                face.save(save_path)
+
+                self.ready_queue.put((save_path, task))
+        else:
+            self.ready_queue.put((None, task))
+
+    def predict(self, task: Task):
+        image_path = task.image_path
+        save_path = image_path[:image_path.rfind('.')] + '_g' + '.png'
+        if os.path.isfile(image_path.split('.')[0] + '.npz'):
+            w = np.load(image_path.split('.')[0] + '.npz')['w']
+            image, noise = predict.predict_by_noise(self.G1, self.G2, True, w, self.vgg16, Image.open(image_path), 0,
+                                                    step_of_steps)
+        else:
+            image, noise = predict.predict_by_noise(self.G1, self.G2, False, None, self.vgg16, Image.open(image_path),
+                                                    0,
+                                                    task.steps)
+        image.save(save_path)
+        np.savez(image_path.split('.')[0] + '.npz', w=noise)
+        self.ready_queue.put((save_path, task))
+
+    def process_task(self, task: Task):
+        if task.crop:
+            self.crop_faces(task)
+            self.iter -= iter_crop
+        else:
+            self.predict(task)
+            if task.steps == start_steps:
+                self.iter -= start_steps
+            else:
+                self.iter -= step_of_steps
 
     def get_waiting_time(self):
-        return round(self.task_queue.qsize() * 10 / 60, 2)
+        if self.iter <= 7 * 120:
+            time = self.iter // 7
 
-    def predict_video(self, video_path):
-        cap = cv2.VideoCapture(video_path)
-
-        save_path = video_path[:video_path.rfind('.')] + '_anim.mp4'
-        frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-
-        freq = fps // 10
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-
-        out = cv2.VideoWriter(save_path, fourcc, 10, (1024, 1024))
-
-        batch = []
-        cnt = 0
-        while cap.isOpened():
-            success, image = cap.read()
-            if not success:
-                break
-
-            cnt += 1
-            if cnt % freq != 0:
-                continue
-
-            batch.append(Image.fromarray(image))
-            if len(batch) == self.batch_size:
-                for image in self.predict(batch):
-                    print(np.array(image).shape)
-                    image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-                    out.write(image)
-
-                batch = []
-
-        if len(batch):
-            for image in self.predict(np.array(batch)):
-                out.write(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))
-
-        out.release()
-        cap.release()
-        print('video released')
-        return save_path
+            return str((time + 5) // 10 * 10) + " секунд"
+        else:
+            time = self.iter // 420
+            m = [" минуту", " минуты", " минут"]
+            if time % 10 == 1:
+                return str(time) + m[0]
+            elif time % 10 == 0 or time % 10 >= 5:
+                return str(time) + m[2]
+            else:
+                return str(time) + m[1]
 
     def run(self) -> None:
-        image_path_counter = {}
-
         while True:
-            cnt = 0
-
-            chats = []
-            image_paths = []
-
-            while cnt < self.batch_size and self.task_queue.qsize():
-                image_path, chat_id = self.task_queue.get()
-
-                if is_it_video(image_path):
-                    path = self.predict_video(image_path)
-                    self.ready_queue.put((path, chat_id))
-                    continue
-                else:
-                    image_paths.append(image_path)
-                    chats.append(chat_id)
-
-                    cnt += 1
-
-            for i, (image_path, image) in enumerate(self.predict(image_paths)):
-                if image_path in image_path_counter:
-                    image_path_counter[image_path] += 1
-                else:
-                    image_path_counter[image_path] = 0
-
-                image_path = image_path[:image_path.rfind('.')] + f'{image_path_counter[image_path]:03d}.' + '.png'
-                image.save(image_path)
-                self.ready_queue.put((image_path, chats[i]))
+            image_path, chat_id, steps, crop = self.task_queue.get()
+            self.process_task(Task(chat_id=chat_id, image_path=image_path, steps=steps, cnt_faces=0, crop=crop))

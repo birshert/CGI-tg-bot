@@ -37,8 +37,10 @@ def find_noise(G,
     if target_images.shape[2] > 256:
         target_images = F.interpolate(target_images, size=(256, 256), mode='area')
     target_features = vgg16(target_images, resize_images=False, return_lpips=True)
-    w_opt = torch.tensor(w_avg if not is_pred else np.mean(w, axis=1, keepdims=True), dtype=torch.float32, device=device,
-                             requires_grad=True)  # pylint: disable=not-callable    w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
+    w_opt = torch.tensor(w_avg if not is_pred else np.mean(w, axis=1, keepdims=True), dtype=torch.float32,
+                         device=device,
+                         requires_grad=True)  # pylint: disable=not-callable
+    w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
     optimizer = torch.optim.Adam([w_opt] + list(noise_bufs.values()), betas=(0.9, 0.999), lr=initial_learning_rate)
 
     # Init noise.

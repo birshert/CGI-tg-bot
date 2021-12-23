@@ -5,7 +5,7 @@ from train import init_dataset_kwargs
 
 
 def blend(path1, path2):
-    training_set_kwargs, _ = init_dataset_kwargs(data='cartoon')
+    training_set_kwargs, _ = init_dataset_kwargs(data='Stylegan3/cartoon')
     training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs)  # subclass of training.dataset.Dataset
 
     G_kwargs = dnnlib.EasyDict(class_name=None, z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict())

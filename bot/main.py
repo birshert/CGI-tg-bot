@@ -29,7 +29,6 @@ iter_crop = 70
 async def some_handler(message: types.Message):
     start_message = 'Привет! Это бот, который умеет преобразовывать фотографии лиц в мультяшные. \n' \
                     'Просто пришли нам свою фотку, и мы сделаем из тебя диснеевскую принцессу)'
-    print(message.chat.id)
     await message.answer(start_message)
 
 

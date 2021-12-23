@@ -1,5 +1,5 @@
+import os
 import sys
-
 
 sys.path.append('face-alignment')
 sys.path.append('Stylegan3')
@@ -15,11 +15,17 @@ from face_aligner import align_image
 from face_aligner import get_detector
 from PIL import Image
 
+import numpy as np
 import dnnlib
 import legacy
 import predict
 from blend_models import blend
 from metrics.metric_utils import get_feature_detector
+
+start_steps = 300
+step_of_steps = 200
+end_steps = 1500
+iter_crop = 70
 
 
 @dataclass
@@ -52,14 +58,14 @@ async def send_ready_images(ready_queue, bot):
             if task.crop:
                 markup.row_width = 1
                 markup.add(
-                    InlineKeyboardButton('Обработать качественно', callback_data='low_' + path),
-                    InlineKeyboardButton('Обработать очень качественно', callback_data='high_' + path),
+                    InlineKeyboardButton('Обработать', callback_data='do|' + str(task.steps) + '|' + path),
                 )
-            else:
-                markup.row_width = 2
+            elif task.steps + step_of_steps <= end_steps:
+                markup.row_width = 1
                 markup.add(
-                    InlineKeyboardButton('\U0001F44D', callback_data='yes1_' + task.image_path),
-                    InlineKeyboardButton('\U0001F44E', callback_data=f'no1_{task.steps}' + task.image_path)
+                    InlineKeyboardButton('Пойдет', callback_data='yes|' + task.image_path),
+                    InlineKeyboardButton('Доработать',
+                                         callback_data='do|' + str(task.steps + step_of_steps) + '|' + task.image_path),
                 )
 
             with open(path, 'rb') as f:
@@ -69,7 +75,7 @@ async def send_ready_images(ready_queue, bot):
                     reply_markup=markup
                 )
         else:
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
 
 
 class RecognizeThread(Thread):
@@ -78,6 +84,7 @@ class RecognizeThread(Thread):
         Thread.__init__(self)
         self.task_queue = task_queue
         self.ready_queue = queue.Queue()
+        self.iter = 0
 
         print('LOADING MODELS')
 
@@ -114,24 +121,45 @@ class RecognizeThread(Thread):
     def predict(self, task: Task):
         image_path = task.image_path
         save_path = image_path[:image_path.rfind('.')] + '_g' + '.png'
-
-        image = predict.predict_by_noise(self.G1, self.G2, self.vgg16, Image.open(image_path), 0, task.steps)
+        if os.path.isfile(image_path.split('.')[0] + '.npz'):
+            w = np.load(image_path.split('.')[0] + '.npz')['w']
+            image, noise = predict.predict_by_noise(self.G1, self.G2, True, w, self.vgg16, Image.open(image_path), 0,
+                                                    step_of_steps)
+        else:
+            image, noise = predict.predict_by_noise(self.G1, self.G2, False, None, self.vgg16, Image.open(image_path),
+                                                    0,
+                                                    task.steps)
         image.save(save_path)
-
+        np.savez(image_path.split('.')[0] + '.npz', w=noise)
         self.ready_queue.put((save_path, task))
 
     def process_task(self, task: Task):
         if task.crop:
             self.crop_faces(task)
+            self.iter -= iter_crop
         else:
             self.predict(task)
+            if task.steps == start_steps:
+                self.iter -= start_steps
+            else:
+                self.iter -= step_of_steps
 
     def get_waiting_time(self):
-        return round(self.task_queue.qsize() * 10 / 60, 2)
+        if self.iter <= 7 * 120:
+            time = self.iter // 7
+
+            return str((time + 5) // 10 * 10) + " секунд"
+        else:
+            time = self.iter // 420
+            m = [" минуту", " минуты", " минут"]
+            if time % 10 == 1:
+                return str(time) + m[0]
+            elif time % 10 == 0 or time % 10 >= 5:
+                return str(time) + m[2]
+            else:
+                return str(time) + m[1]
 
     def run(self) -> None:
         while True:
-            await asyncio.sleep(1)
-
             image_path, chat_id, steps, crop = self.task_queue.get()
             self.process_task(Task(chat_id=chat_id, image_path=image_path, steps=steps, cnt_faces=0, crop=crop))
